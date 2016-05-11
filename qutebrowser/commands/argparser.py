@@ -19,7 +19,6 @@
 
 """argparse.ArgumentParser subclass to parse qutebrowser commands."""
 
-
 import argparse
 
 from PyQt5.QtCore import QUrl
@@ -84,6 +83,11 @@ class ArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError(msg.capitalize())
 
 
+def arg_name(name):
+    """Get the name an argument should have based on its Python name."""
+    return name.rstrip('_').replace('_', '-')
+
+
 def enum_getter(enum):
     """Function factory to get an enum getter."""
     def _get_enum_item(key):
@@ -94,23 +98,39 @@ def enum_getter(enum):
         if isinstance(key, enum):
             return key
         try:
-            return enum[key.replace('-', '_')]
+            return enum[arg_name(key)]
         except KeyError:
             raise cmdexc.ArgumentTypeError("Invalid value {}.".format(key))
 
     return _get_enum_item
 
 
-def multitype_conv(types):
-    """Function factory to get a type converter for a choice of types."""
+def _check_choices(param, value, choices):
+    if value not in choices:
+        expected_values = ', '.join(choices)
+        raise ValueError("Invalid value {!r} for {} - expected one of: "
+                         "{}".format(value, param.name, expected_values))
+
+
+def multitype_conv(param, types, str_choices=None):
+    """Function factory to get a type converter for a choice of types.
+
+    Args:
+        param: The argparse.Parameter we're checking
+        types: The allowed types ("overloads")
+        str_choices: The allowed choices if the type ends up being a string
+    """
     def _convert(value):
         """Convert a value according to an iterable of possible arg types."""
         for typ in set(types):
             if isinstance(typ, str):
-                if value == typ:
-                    return value
+                raise TypeError("Legacy str type for command!")
             elif utils.is_enum(typ):
+                _check_choices(param, value, [arg_name(e.name) for e in typ])
                 return enum_getter(typ)(value)
+            elif typ is str:
+                if str_choices is not None:
+                    _check_choices(param, value, str_choices)
             elif callable(typ):
                 # int, float, etc.
                 if isinstance(value, typ):
@@ -120,7 +140,9 @@ def multitype_conv(types):
                 except (TypeError, ValueError):
                     pass
             else:
-                raise ValueError("Unknown type {!r}!".format(typ))
-        raise cmdexc.ArgumentTypeError('Invalid value {}.'.format(value))
+                raise ValueError("{}: Unknown type {!r}!".format(
+                    param.name, typ))
+        raise cmdexc.ArgumentTypeError('{}: Invalid value {}.'.format(
+            param.name, value))
 
     return _convert

@@ -22,7 +22,7 @@
 import pytest
 
 from qutebrowser.commands import cmdutils, cmdexc, argparser, command
-from qutebrowser.utils import usertypes
+from qutebrowser.utils import usertypes, typing
 
 
 @pytest.fixture(autouse=True)
@@ -265,23 +265,29 @@ class TestRegister:
 
     Enum = usertypes.enum('Test', ['x', 'y'])
 
-    @pytest.mark.parametrize('typ, inp, expected', [
-        (int, '42', 42),
-        (int, 'x', argparser.ArgumentParserError),
-        (str, 'foo', 'foo'),
+    @pytest.mark.parametrize('typ, inp, choices, expected', [
+        (int, '42', None, 42),
+        (int, 'x', None, argparser.ArgumentParserError),
+        (str, 'foo', None, 'foo'),
 
-        ((str, int), 'foo', 'foo'),
-        ((str, int), '42', 42),
+        (typing.Union[str, int], None, 'foo', 'foo'),
+        (typing.Union[str, int], None, '42', 42),
 
-        (('foo', int), 'foo', 'foo'),
-        (('foo', int), '42', 42),
-        (('foo', int), 'bar', cmdexc.ArgumentTypeError),
+        # Choices
+        (str, ['foo'], 'foo', 'foo'),
+        (str, ['foo'], 'bar', cmdexc.ArgumentTypeError),
 
-        (Enum, 'x', Enum.x),
-        (Enum, 'z', argparser.ArgumentParserError),
+        # Choices with Union: only checked when it's a str
+        (typing.Union[str, int], ['foo'], 'foo', 'foo'),
+        (typing.Union[str, int], ['foo'], 'bar', cmdexc.ArgumentTypeError),
+        (typing.Union[str, int], ['foo'], '42', 42),
+
+        (Enum, 'x', None, Enum.x),
+        (Enum, 'z', None, argparser.ArgumentParserError),
     ])
-    def test_typed_args(self, typ, inp, expected):
+    def test_typed_args(self, typ, inp, choices, expected):
         @cmdutils.register()
+        @cmdutils.argument('arg', choices=choices)
         def fun(arg: typ):
             """Blah."""
             pass
